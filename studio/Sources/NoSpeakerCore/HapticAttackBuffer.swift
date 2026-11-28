@@ -19,7 +19,9 @@ public struct HapticAttackBuffer<Payload: Sendable>: Sendable {
         entries.append(.init(value:value,time:now))
     }
     private mutating func prune(now: Double) {
-        entries.removeAll { now < $0.time || now-$0.time >= Self.maximumAge }
+        // Compare absolute representable deadlines; subtraction can round
+        // a nominal expiry down. A collapsed deadline expires immediately.
+        entries.removeAll { now < $0.time || now >= $0.time + Self.maximumAge }
     }
     public mutating func take(now: Double) -> Payload? {
         guard now.isFinite, now >= 0 else { removeAll(); return nil }
