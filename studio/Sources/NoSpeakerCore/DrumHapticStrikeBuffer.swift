@@ -31,7 +31,9 @@ public struct DrumHapticStrikeBuffer: Sendable {
     }
 
     private mutating func prune(now: Double) {
-        pending.removeAll { now < $0.time || now-$0.time >= Self.maximumAge }
+        // Compare absolute representable deadlines; subtraction can round
+        // a nominal expiry down. A collapsed deadline expires immediately.
+        pending.removeAll { now < $0.time || now >= $0.time + Self.maximumAge }
     }
 
     public mutating func drain(now: Double) -> [HapticFrame] {
