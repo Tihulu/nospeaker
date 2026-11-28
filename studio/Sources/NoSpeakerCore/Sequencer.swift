@@ -68,15 +68,21 @@ public struct DrumSequence: Sendable, Equatable {
 
 public enum HapticPatternRenderer {
     public static func notes(_ sequence: NoteSequence) throws -> [ScheduledHapticEvent] {
-        try sequence.steps.compactMap { step in
-            guard let midi = step.midi, step.index >= 0, step.index < sequence.length else { return nil }
+        let stepDuration = sequence.stepDuration
+        guard sequence.bpm.isFinite, sequence.bpm > 0, sequence.stepsPerBeat > 0,
+              stepDuration.isFinite, stepDuration > 0 else { return [] }
+        return try sequence.steps.compactMap { step in
+            guard let midi = step.midi, step.index >= 0, step.index < sequence.length,
+                  step.gate.isFinite, step.velocity.isFinite else { return nil }
+            let time = Double(step.index) * stepDuration
+            let durationMS = stepDuration * min(max(step.gate, 0.05), 1.0) * 1_000
+            guard time.isFinite, durationMS.isFinite, durationMS > 0 else { return nil }
             let frequency = try MusicTheory.frequency(midi: midi)
-            let duration = sequence.stepDuration * min(max(step.gate, 0.05), 1.0)
             return ScheduledHapticEvent(
-                time: Double(step.index) * sequence.stepDuration,
+                time: time,
                 frame: HapticFrame(
                     tones: [HapticTone(frequencyHz: frequency)],
-                    durationMS: duration * 1_000,
+                    durationMS: durationMS,
                     level: min(max(step.velocity, 0), 1)
                 )
             )
@@ -84,10 +90,15 @@ public enum HapticPatternRenderer {
     }
 
     public static func drums(_ sequence: DrumSequence) -> [ScheduledHapticEvent] {
-        sequence.hits.compactMap { hit in
-            guard hit.index >= 0, hit.index < sequence.length else { return nil }
+        let stepDuration = sequence.stepDuration
+        guard sequence.bpm.isFinite, sequence.bpm > 0, sequence.stepsPerBeat > 0,
+              stepDuration.isFinite, stepDuration > 0 else { return [] }
+        return sequence.hits.compactMap { hit in
+            guard hit.index >= 0, hit.index < sequence.length, hit.velocity.isFinite else { return nil }
+            let time = Double(hit.index) * stepDuration
+            guard time.isFinite else { return nil }
             return ScheduledHapticEvent(
-                time: Double(hit.index) * sequence.stepDuration,
+                time: time,
                 frame: drumFrame(hit.voice, velocity: hit.velocity)
             )
         }.sorted { $0.time < $1.time }
@@ -97,6 +108,7 @@ public enum HapticPatternRenderer {
     /// GM pads have distinct, conservative haptic profiles rather than
     /// treating a percussion note number as an equal-tempered pitch.
     public static func drumFrame(midiNote: Int, velocity: Double) -> HapticFrame? {
+        guard velocity.isFinite else { return nil }
         let level = min(max(velocity, 0), 1)
         switch midiNote {
         case 36: return drumFrame(.kick, velocity: level)
@@ -122,7 +134,8 @@ public enum HapticPatternRenderer {
     }
 
     public static func drumFrame(_ voice: DrumVoice, velocity: Double) -> HapticFrame {
-        let level = min(max(velocity, 0), 1)
+        // The nonoptional legacy API returns a silent frame for invalid input.
+        let level = velocity.isFinite ? min(max(velocity, 0), 1) : 0
         switch voice {
         case .kick:
             return HapticFrame(tones: [HapticTone(frequencyHz: 120)], durationMS: 70, level: level)
