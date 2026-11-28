@@ -3,8 +3,12 @@
 /// for distinct recent pitches. The physical motor still has six voices.
 public enum LiveHapticFrameSelection {
     public static func select(held: HapticFrame?, attack: HapticFrame?) -> HapticFrame? {
-        guard let held else { return attack }
-        guard let attack, valid(held), valid(attack) else { return held }
+        // Admit each source independently so a malformed or silent frame
+        // cannot escape validation or suppress an otherwise valid source.
+        guard let held, valid(held) else {
+            return attack.flatMap { valid($0) ? $0 : nil }
+        }
+        guard let attack, valid(attack) else { return held }
         let safety = HapticSafetyPolicy()
         guard held.tones.count < safety.maxTonesPerFrame else { return held }
         var frequencies = Set(held.tones.map(\.frequencyHz))
@@ -32,6 +36,7 @@ public enum LiveHapticFrameSelection {
         frame.level.isFinite && frame.level > 0 && frame.level <= 1 &&
         frame.durationMS.isFinite && (0.5...120).contains(frame.durationMS) &&
         (1...6).contains(frame.tones.count) &&
+        frame.tones.contains { $0.amplitude > 0 } &&
         frame.tones.allSatisfy {
             $0.frequencyHz.isFinite && (98...3951).contains($0.frequencyHz) &&
             $0.amplitude.isFinite && (0...1).contains($0.amplitude)
